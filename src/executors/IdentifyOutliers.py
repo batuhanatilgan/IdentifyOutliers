@@ -50,11 +50,16 @@ class IdentifyOutliers(Component):
 
         all_descriptors = []
         for det in detections:
-            if det.keyPoints is None:
+            key_points = det.get('keyPoints') if isinstance(det, dict) else getattr(det, 'keyPoints', None)
+            
+            if key_points is None:
                 continue
-            for kp in det.keyPoints:
-                if hasattr(kp, "descriptor") and kp.descriptor is not None:
-                    desc = np.array(kp.descriptor, dtype=np.float32)
+                
+            for kp in key_points:
+                descriptor = kp.get('descriptor') if isinstance(kp, dict) else getattr(kp, 'descriptor', None)
+                
+                if descriptor is not None:
+                    desc = np.array(descriptor, dtype=np.float32)
                     if desc.shape[0] > 0:
                         all_descriptors.append(desc)
 
