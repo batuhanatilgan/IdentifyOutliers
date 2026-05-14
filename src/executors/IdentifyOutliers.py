@@ -1,7 +1,6 @@
 """
-    Detects outlier embeddings by comparing incoming SIFT descriptor vectors
-    against a sliding window of historical embeddings using von Mises-Fisher
-    directional statistics. Outputs is_outlier, percentile, and warming_up flags.
+    Detects outlier embeddings using von Mises-Fisher directional statistics.
+    Injects the outlier analysis results into the incoming Detection objects under the 'Identify' key.
 """
 
 import os
@@ -88,39 +87,48 @@ class IdentifyOutliers(Component):
 
         if embedding is None:
             self.warming_up = self.sample_count < self.warmup
-            return
+        else:
+            normalized = self._normalize(embedding)
+            self.sample_count += 1
+            self.bootstrap["sample_count"] = self.sample_count
+            self.warming_up = self.sample_count <= self.warmup
 
-        normalized = self._normalize(embedding)
+            self.embedding_window.append(normalized.tolist())
+            if len(self.embedding_window) > self.window_size:
+                self.embedding_window = self.embedding_window[-self.window_size:]
+            self.bootstrap["embedding_window"] = self.embedding_window
 
-        self.sample_count += 1
-        self.bootstrap["sample_count"] = self.sample_count
+            if not self.warming_up:
+                window_arr = np.array(self.embedding_window, dtype=np.float32)
+                mu = self._normalize(np.mean(window_arr, axis=0))
+                self.percentile = self._compute_percentile(normalized, mu)
+                self.is_outlier = (
+                    self.percentile < self.threshold_percentile
+                    or self.percentile > (1.0 - self.threshold_percentile)
+                )
 
-        self.warming_up = self.sample_count <= self.warmup
+        # Enjecting 'Identify' block into outgoing detections
+        identify_result = {
+            "is_outlier": bool(self.is_outlier),
+            "percentile": round(float(self.percentile), 4),
+            "warming_up": bool(self.warming_up)
+        }
 
-        self.embedding_window.append(normalized.tolist())
-        if len(self.embedding_window) > self.window_size:
-            self.embedding_window = self.embedding_window[-self.window_size:]
-        self.bootstrap["embedding_window"] = self.embedding_window
-
-        if self.warming_up:
-            self.is_outlier = False
-            self.percentile = 0.5
-            return
-
-        window_arr = np.array(self.embedding_window, dtype=np.float32)
-        mu = self._normalize(np.mean(window_arr, axis=0))
-
-        self.percentile = self._compute_percentile(normalized, mu)
-        self.is_outlier = (
-            self.percentile < self.threshold_percentile
-            or self.percentile > (1.0 - self.threshold_percentile)
-        )
+        enriched_detections = []
+        if self.detections:
+            det_list = self.detections if isinstance(self.detections, list) else [self.detections]
+            for det in det_list:
+                # Handle both dict and pydantic object conversions to safely inject new keys
+                det_dict = det if isinstance(det, dict) else getattr(det, "model_dump", lambda: getattr(det, "dict", lambda: vars(det))())()
+                det_dict["Identify"] = identify_result
+                enriched_detections.append(det_dict)
+                
+        self.detections = enriched_detections
 
     def run(self):
         self.detect()
         package_model = build_response(context=self)
         return package_model
-
 
 if "__main__" == __name__:
     Executor(sys.argv[1]).run()

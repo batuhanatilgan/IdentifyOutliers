@@ -6,21 +6,14 @@ from components.IdentifyOutliers.src.models.PackageModel import (
     IdentifyOutliersExecutor,
     IdentifyOutliersResponse,
     IdentifyOutliersOutputs,
-    OutputIsOutlier,
-    OutputPercentile,
-    OutputWarmingUp,
+    OutputDetections
 )
 
-
 def build_response(context):
-    outputIsOutlier = OutputIsOutlier(value=context.is_outlier)
-    outputPercentile = OutputPercentile(value=context.percentile)
-    outputWarmingUp = OutputWarmingUp(value=context.warming_up)
+    outputDetections = OutputDetections(value=context.detections)
 
     outputs = IdentifyOutliersOutputs(
-        outputIsOutlier=outputIsOutlier,
-        outputPercentile=outputPercentile,
-        outputWarmingUp=outputWarmingUp,
+        outputDetections=outputDetections
     )
 
     identifyOutliersResponse = IdentifyOutliersResponse(outputs=outputs)
