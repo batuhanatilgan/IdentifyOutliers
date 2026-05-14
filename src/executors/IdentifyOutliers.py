@@ -1,6 +1,7 @@
 """
     Detects outlier embeddings using von Mises-Fisher directional statistics.
-    Injects the outlier analysis results into the incoming Detection objects under the 'Identify' key.
+    Injects the outlier analysis results into the incoming Detection objects under the 'Identify' key,
+    and removes the heavy SIFT 'keyPoints' payload.
 """
 
 import os
@@ -107,7 +108,6 @@ class IdentifyOutliers(Component):
                     or self.percentile > (1.0 - self.threshold_percentile)
                 )
 
-        # Enjecting 'Identify' block into outgoing detections
         identify_result = {
             "is_outlier": bool(self.is_outlier),
             "percentile": round(float(self.percentile), 4),
@@ -118,8 +118,11 @@ class IdentifyOutliers(Component):
         if self.detections:
             det_list = self.detections if isinstance(self.detections, list) else [self.detections]
             for det in det_list:
-                # Handle both dict and pydantic object conversions to safely inject new keys
                 det_dict = det if isinstance(det, dict) else getattr(det, "model_dump", lambda: getattr(det, "dict", lambda: vars(det))())()
+                
+                # Devasa SIFT verisini çıktıdan temizliyoruz
+                det_dict.pop("keyPoints", None)
+                
                 det_dict["Identify"] = identify_result
                 enriched_detections.append(det_dict)
                 

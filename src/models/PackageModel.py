@@ -6,6 +6,7 @@ from sdks.novavision.src.base.model import (
 )
 
 class InputDetections(Input):
+    """The incoming SIFT detections containing descriptor vectors to be analyzed for anomalies."""
     name: Literal["inputDetections"] = "inputDetections"
     value: Union[List[Detection], Detection]
     type: str = "object"
@@ -21,6 +22,7 @@ class InputDetections(Input):
         title = "Detections"
 
 class OutputDetections(Output):
+    """The output detection data enriched with the 'Identify' outlier analysis results."""
     name: Literal["outputDetections"] = "outputDetections"
     value: List[Detection]
     type: Literal["list"] = "list"
@@ -29,6 +31,10 @@ class OutputDetections(Output):
         title = "Detections"
 
 class ConfigThresholdPercentile(Config):
+    """
+    Percentile threshold for outlier detection, range 0.0 to 1.0.
+    Lower values detect only extreme outliers. Higher values are more sensitive.
+    """
     name: Literal["ConfigThresholdPercentile"] = "ConfigThresholdPercentile"
     value: float = Field(ge=0.0, le=1.0, default=0.05)
     type: Literal["number"] = "number"
@@ -37,11 +43,13 @@ class ConfigThresholdPercentile(Config):
 
     class Config:
         title = "Threshold Percentile"
-        json_schema_extra = {
-            "shortDescription": "Outlier sensitivity threshold (0.0 to 1.0)."
-        }
+        json_schema_extra = {"shortDescription": "Outlier sensitivity threshold (0.0 to 1.0)."}
 
 class ConfigWarmup(Config):
+    """
+    Number of initial samples required before outlier detection begins.
+    During this period all frames return is_outlier=False to allow baseline establishment.
+    """
     name: Literal["ConfigWarmup"] = "ConfigWarmup"
     value: int = Field(ge=2, default=10)
     type: Literal["number"] = "number"
@@ -50,11 +58,13 @@ class ConfigWarmup(Config):
 
     class Config:
         title = "Warmup Samples"
-        json_schema_extra = {
-            "shortDescription": "Minimum samples collected before detection starts."
-        }
+        json_schema_extra = {"shortDescription": "Minimum samples collected before detection starts."}
 
 class ConfigWindowSize(Config):
+    """
+    Maximum number of historical embeddings stored in the sliding window.
+    When exceeded, the oldest embedding is removed.
+    """
     name: Literal["ConfigWindowSize"] = "ConfigWindowSize"
     value: int = Field(ge=2, default=32)
     type: Literal["number"] = "number"
@@ -63,34 +73,36 @@ class ConfigWindowSize(Config):
 
     class Config:
         title = "Window Size"
-        json_schema_extra = {
-            "shortDescription": "Number of recent embeddings kept for comparison."
-        }
+        json_schema_extra = {"shortDescription": "Number of recent embeddings kept for comparison."}
 
 class IdentifyOutliersInputs(Inputs):
+    """Aggregates the inputs required for the Identify Outliers package."""
     inputDetections: InputDetections
 
 class IdentifyOutliersConfigs(Configs):
+    """Aggregates the configuration parameters for the Identify Outliers package."""
     configThresholdPercentile: ConfigThresholdPercentile
     configWarmup: ConfigWarmup
     configWindowSize: ConfigWindowSize
 
 class IdentifyOutliersOutputs(Outputs):
+    """Aggregates the outputs produced by the Identify Outliers package."""
     outputDetections: OutputDetections
 
 class IdentifyOutliersRequest(Request):
+    """The incoming request payload containing inputs and configurations."""
     inputs: Optional[IdentifyOutliersInputs]
     configs: IdentifyOutliersConfigs
 
     class Config:
-        json_schema_extra = {
-            "target": "configs"
-        }
+        json_schema_extra = {"target": "configs"}
 
 class IdentifyOutliersResponse(Response):
+    """The outgoing response payload containing the enriched detections."""
     outputs: IdentifyOutliersOutputs
 
 class IdentifyOutliersExecutor(Config):
+    """The main executor that detects outlier embeddings using von Mises-Fisher directional statistics."""
     name: Literal["IdentifyOutliers"] = "IdentifyOutliers"
     value: Union[IdentifyOutliersRequest, IdentifyOutliersResponse]
     type: Literal["object"] = "object"
@@ -98,13 +110,10 @@ class IdentifyOutliersExecutor(Config):
 
     class Config:
         title = "Identify Outliers"
-        json_schema_extra = {
-            "target": {
-                "value": 0
-            }
-        }
+        json_schema_extra = {"target": {"value": 0}}
 
 class ConfigExecutor(Config):
+    """Top-level selection for the model task and execution logic."""
     name: Literal["ConfigExecutor"] = "ConfigExecutor"
     value: Union[IdentifyOutliersExecutor]
     type: Literal["executor"] = "executor"
@@ -112,14 +121,14 @@ class ConfigExecutor(Config):
 
     class Config:
         title = "Task"
-        json_schema_extra = {
-            "target": "value"
-        }
+        json_schema_extra = {"target": "value"}
 
 class PackageConfigs(Configs):
+    """Wraps the top-level executor configuration for the package."""
     executor: ConfigExecutor
 
 class PackageModel(Package):
+    """The root model defining the Identify Outliers component package structure."""
     configs: PackageConfigs
     type: Literal["component"] = "component"
     name: Literal["IdentifyOutliers"] = "IdentifyOutliers"
