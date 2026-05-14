@@ -68,8 +68,7 @@ class IdentifyOutliers(Component):
 
         return np.mean(all_descriptors, axis=0)
 
-    @staticmethod
-    def _normalize(vec: np.ndarray) -> np.ndarray:
+    def _normalize(self, vec: np.ndarray) -> np.ndarray:
         norm = np.linalg.norm(vec)
         if norm < 1e-10:
             return vec
@@ -89,6 +88,7 @@ class IdentifyOutliers(Component):
         if embedding is None:
             self.warming_up = self.sample_count < self.warmup
         else:
+            # Artık self._normalize olarak çağrılıyor
             normalized = self._normalize(embedding)
             self.sample_count += 1
             self.bootstrap["sample_count"] = self.sample_count
@@ -120,9 +120,7 @@ class IdentifyOutliers(Component):
             for det in det_list:
                 det_dict = det if isinstance(det, dict) else getattr(det, "model_dump", lambda: getattr(det, "dict", lambda: vars(det))())()
                 
-                # Devasa SIFT verisini çıktıdan temizliyoruz
                 det_dict.pop("keyPoints", None)
-                
                 det_dict["Identify"] = identify_result
                 enriched_detections.append(det_dict)
                 
