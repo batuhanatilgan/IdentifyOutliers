@@ -6,14 +6,14 @@ from components.IdentifyOutliers.src.models.PackageModel import (
     IdentifyOutliersExecutor,
     IdentifyOutliersResponse,
     IdentifyOutliersOutputs,
-    OutputDetections
+    OutputData
 )
 
 def build_response(context):
-    outputDetections = OutputDetections(value=context.detections)
+    outputData = OutputData(value=context.output_data)
 
     outputs = IdentifyOutliersOutputs(
-        outputDetections=outputDetections
+        outputData=outputData
     )
 
     identifyOutliersResponse = IdentifyOutliersResponse(outputs=outputs)

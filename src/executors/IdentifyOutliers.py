@@ -1,7 +1,7 @@
 """
     Detects outlier embeddings using von Mises-Fisher directional statistics.
-    Injects the outlier analysis results into the incoming Detection objects under the 'Identify' key,
-    and removes the heavy SIFT 'keyPoints' payload.
+    Reads pre-calculated embeddings (e.g., from CLIP) and injects the 'Identify'
+    anomaly analysis results into the output payload.
 """
 
 import os
@@ -21,17 +21,15 @@ class IdentifyOutliers(Component):
         super().__init__(request, bootstrap)
         self.request.model = PackageModel(**(self.request.data))
 
-        self.detections = self.request.get_param("inputDetections")
+        self.input_data = self.request.get_param("inputData")
         self.threshold_percentile = float(self.request.get_param("configThresholdPercentile") or 0.05)
         self.warmup = int(self.request.get_param("configWarmup") or 10)
         self.window_size = int(self.request.get_param("configWindowSize") or 32)
 
         self.sample_count = self.bootstrap.get("sample_count", 0)
         self.embedding_window = self.bootstrap.get("embedding_window", [])
-
-        self.is_outlier = False
-        self.percentile = 0.5
-        self.warming_up = True
+        
+        self.output_data = []
 
     @staticmethod
     def bootstrap(config: dict) -> dict:
@@ -39,34 +37,6 @@ class IdentifyOutliers(Component):
             "sample_count": 0,
             "embedding_window": [],
         }
-
-    def _extract_embedding(self):
-        detections = self.detections
-        if detections is None:
-            return None
-
-        if not isinstance(detections, list):
-            detections = [detections]
-
-        all_descriptors = []
-        for det in detections:
-            key_points = det.get('keyPoints') if isinstance(det, dict) else getattr(det, 'keyPoints', None)
-            
-            if key_points is None:
-                continue
-                
-            for kp in key_points:
-                descriptor = kp.get('descriptor') if isinstance(kp, dict) else getattr(kp, 'descriptor', None)
-                
-                if descriptor is not None:
-                    desc = np.array(descriptor, dtype=np.float32)
-                    if desc.shape[0] > 0:
-                        all_descriptors.append(desc)
-
-        if not all_descriptors:
-            return None
-
-        return np.mean(all_descriptors, axis=0)
 
     def _normalize(self, vec: np.ndarray) -> np.ndarray:
         norm = np.linalg.norm(vec)
@@ -83,48 +53,54 @@ class IdentifyOutliers(Component):
         return float(rank) / float(n) if n > 0 else 0.5
 
     def detect(self):
-        embedding = self._extract_embedding()
+        # Gelen veri boşsa işlem yapma
+        if not self.input_data:
+            self.output_data = []
+            return
 
-        if embedding is None:
-            self.warming_up = self.sample_count < self.warmup
-        else:
-            # Artık self._normalize olarak çağrılıyor
-            normalized = self._normalize(embedding)
-            self.sample_count += 1
-            self.bootstrap["sample_count"] = self.sample_count
-            self.warming_up = self.sample_count <= self.warmup
+        # CLIP'ten gelen veriyi her zaman liste formatında işliyoruz
+        data_list = self.input_data if isinstance(self.input_data, list) else [self.input_data]
+        enriched_data = []
 
-            self.embedding_window.append(normalized.tolist())
-            if len(self.embedding_window) > self.window_size:
-                self.embedding_window = self.embedding_window[-self.window_size:]
-            self.bootstrap["embedding_window"] = self.embedding_window
+        for item in data_list:
+            item_dict = item if isinstance(item, dict) else getattr(item, "model_dump", lambda: getattr(item, "dict", lambda: vars(item))())()
+            
+            # Arkadaşının CLIP paketinden gelen hazır vektörü okuyoruz
+            embedding = item_dict.get("embedding")
+            
+            is_outlier = False
+            percentile = 0.5
+            warming_up = True
 
-            if not self.warming_up:
-                window_arr = np.array(self.embedding_window, dtype=np.float32)
-                mu = self._normalize(np.mean(window_arr, axis=0))
-                self.percentile = self._compute_percentile(normalized, mu)
-                self.is_outlier = (
-                    self.percentile < self.threshold_percentile
-                    or self.percentile > (1.0 - self.threshold_percentile)
-                )
-
-        identify_result = {
-            "is_outlier": bool(self.is_outlier),
-            "percentile": round(float(self.percentile), 4),
-            "warming_up": bool(self.warming_up)
-        }
-
-        enriched_detections = []
-        if self.detections:
-            det_list = self.detections if isinstance(self.detections, list) else [self.detections]
-            for det in det_list:
-                det_dict = det if isinstance(det, dict) else getattr(det, "model_dump", lambda: getattr(det, "dict", lambda: vars(det))())()
+            if embedding is not None:
+                emb_arr = np.array(embedding, dtype=np.float32)
+                normalized = self._normalize(emb_arr)
                 
-                det_dict.pop("keyPoints", None)
-                det_dict["Identify"] = identify_result
-                enriched_detections.append(det_dict)
-                
-        self.detections = enriched_detections
+                self.sample_count += 1
+                self.bootstrap["sample_count"] = self.sample_count
+                warming_up = self.sample_count <= self.warmup
+
+                self.embedding_window.append(normalized.tolist())
+                if len(self.embedding_window) > self.window_size:
+                    self.embedding_window = self.embedding_window[-self.window_size:]
+                self.bootstrap["embedding_window"] = self.embedding_window
+
+                if not warming_up:
+                    window_arr = np.array(self.embedding_window, dtype=np.float32)
+                    mu = self._normalize(np.mean(window_arr, axis=0))
+                    percentile = self._compute_percentile(normalized, mu)
+                    is_outlier = (percentile < self.threshold_percentile or percentile > (1.0 - self.threshold_percentile))
+
+            # Kaçak yolcumuzu (Identify) verinin içine enjekte ediyoruz
+            item_dict["Identify"] = {
+                "is_outlier": bool(is_outlier),
+                "percentile": round(float(percentile), 4),
+                "warming_up": bool(warming_up)
+            }
+            
+            enriched_data.append(item_dict)
+
+        self.output_data = enriched_data
 
     def run(self):
         self.detect()
