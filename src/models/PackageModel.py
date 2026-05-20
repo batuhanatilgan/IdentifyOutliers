@@ -1,14 +1,14 @@
 from pydantic import Field, validator
-from typing import List, Optional, Union, Literal, Dict, Any
+from typing import List, Optional, Union, Literal
 from sdks.novavision.src.base.model import (
     Package, Inputs, Configs, Outputs,
     Response, Request, Output, Input, Config
 )
 
+
 class InputData(Input):
-    """The incoming data containing pre-calculated embeddings (e.g., from CLIP)."""
     name: Literal["inputData"] = "inputData"
-    value: Union[List[Dict], Dict, List, Any]
+    value: Union[dict, list]
     type: str = "object"
 
     @validator("type", pre=True, always=True)
@@ -21,16 +21,29 @@ class InputData(Input):
     class Config:
         title = "Input Data"
 
+
 class OutputData(Output):
-    """The output data enriched with the 'Identify' outlier analysis results."""
     name: Literal["outputData"] = "outputData"
-    value: Union[List[Dict], Dict, List, Any]
-    type: Literal["list"] = "list"
+    value: Union[dict, list]
+    type: str = "object"
+
+    @validator("type", pre=True, always=True)
+    def set_type_based_on_value(cls, value, values):
+        v = values.get("value")
+        if isinstance(v, list):
+            return "list"
+        return "object"
 
     class Config:
         title = "Output Data"
 
+
 class ConfigThresholdPercentile(Config):
+    """
+    Percentile threshold for outlier detection, range 0.0 to 1.0.
+    Embeddings below this percentile or above (1 - threshold) are flagged as outliers.
+    Lower values (e.g. 0.01) detect only extreme outliers. Higher values (e.g. 0.1) are more sensitive.
+    """
     name: Literal["ConfigThresholdPercentile"] = "ConfigThresholdPercentile"
     value: float = Field(ge=0.0, le=1.0, default=0.05)
     type: Literal["number"] = "number"
@@ -41,7 +54,13 @@ class ConfigThresholdPercentile(Config):
         title = "Threshold Percentile"
         json_schema_extra = {"shortDescription": "Outlier sensitivity threshold (0.0 to 1.0)."}
 
+
 class ConfigWarmup(Config):
+    """
+    Number of initial samples required before outlier detection begins.
+    During this period all frames return is_outlier=False to allow baseline establishment.
+    Must be at least 2. Typical range: 3 to 100.
+    """
     name: Literal["ConfigWarmup"] = "ConfigWarmup"
     value: int = Field(ge=2, default=10)
     type: Literal["number"] = "number"
@@ -52,7 +71,13 @@ class ConfigWarmup(Config):
         title = "Warmup Samples"
         json_schema_extra = {"shortDescription": "Minimum samples collected before detection starts."}
 
+
 class ConfigWindowSize(Config):
+    """
+    Maximum number of historical embeddings stored in the sliding window.
+    When exceeded, the oldest embedding is removed (FIFO).
+    Larger windows yield more stable statistics but adapt slower to distribution changes.
+    """
     name: Literal["ConfigWindowSize"] = "ConfigWindowSize"
     value: int = Field(ge=2, default=32)
     type: Literal["number"] = "number"
@@ -63,16 +88,20 @@ class ConfigWindowSize(Config):
         title = "Window Size"
         json_schema_extra = {"shortDescription": "Number of recent embeddings kept for comparison."}
 
+
 class IdentifyOutliersInputs(Inputs):
     inputData: InputData
+
 
 class IdentifyOutliersConfigs(Configs):
     configThresholdPercentile: ConfigThresholdPercentile
     configWarmup: ConfigWarmup
     configWindowSize: ConfigWindowSize
 
+
 class IdentifyOutliersOutputs(Outputs):
     outputData: OutputData
+
 
 class IdentifyOutliersRequest(Request):
     inputs: Optional[IdentifyOutliersInputs]
@@ -81,10 +110,16 @@ class IdentifyOutliersRequest(Request):
     class Config:
         json_schema_extra = {"target": "configs"}
 
+
 class IdentifyOutliersResponse(Response):
     outputs: IdentifyOutliersOutputs
 
+
 class IdentifyOutliersExecutor(Config):
+    """
+    Detects outlier embeddings using von Mises-Fisher directional statistics
+    over a sliding window of historical embedding vectors from CLIP.
+    """
     name: Literal["IdentifyOutliers"] = "IdentifyOutliers"
     value: Union[IdentifyOutliersRequest, IdentifyOutliersResponse]
     type: Literal["object"] = "object"
@@ -94,7 +129,11 @@ class IdentifyOutliersExecutor(Config):
         title = "Identify Outliers"
         json_schema_extra = {"target": {"value": 0}}
 
+
 class ConfigExecutor(Config):
+    """
+    Task selector that defines which execution component will run within this package.
+    """
     name: Literal["ConfigExecutor"] = "ConfigExecutor"
     value: Union[IdentifyOutliersExecutor]
     type: Literal["executor"] = "executor"
@@ -104,8 +143,10 @@ class ConfigExecutor(Config):
         title = "Task"
         json_schema_extra = {"target": "value"}
 
+
 class PackageConfigs(Configs):
     executor: ConfigExecutor
+
 
 class PackageModel(Package):
     configs: PackageConfigs

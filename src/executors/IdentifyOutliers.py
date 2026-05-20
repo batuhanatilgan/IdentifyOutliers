@@ -53,19 +53,15 @@ class IdentifyOutliers(Component):
         return float(rank) / float(n) if n > 0 else 0.5
 
     def detect(self):
-        # Gelen veri boşsa işlem yapma
         if not self.input_data:
             self.output_data = []
             return
 
-        # CLIP'ten gelen veriyi her zaman liste formatında işliyoruz
         data_list = self.input_data if isinstance(self.input_data, list) else [self.input_data]
         enriched_data = []
 
         for item in data_list:
             item_dict = item if isinstance(item, dict) else getattr(item, "model_dump", lambda: getattr(item, "dict", lambda: vars(item))())()
-            
-            # Arkadaşının CLIP paketinden gelen hazır vektörü okuyoruz
             embedding = item_dict.get("embedding")
             
             is_outlier = False
@@ -90,8 +86,7 @@ class IdentifyOutliers(Component):
                     mu = self._normalize(np.mean(window_arr, axis=0))
                     percentile = self._compute_percentile(normalized, mu)
                     is_outlier = (percentile < self.threshold_percentile or percentile > (1.0 - self.threshold_percentile))
-
-            # Kaçak yolcumuzu (Identify) verinin içine enjekte ediyoruz
+            item_dict.pop("embedding", None)
             item_dict["Identify"] = {
                 "is_outlier": bool(is_outlier),
                 "percentile": round(float(percentile), 4),
